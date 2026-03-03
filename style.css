@@ -9,5 +9,7 @@
 .version-footer {
     font-size: 0.7rem;
     pointer-events: none;
-    z-index: 1060;
+    z-index: 9999;
+    font-weight: bold;
+    color: #000 !important;
 }
