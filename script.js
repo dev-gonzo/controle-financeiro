@@ -29,24 +29,67 @@ onAuthStateChanged(auth, (user) => {
     if (user) {
         // Usuário logado
         console.log("Usuário logado:", user.email);
+        
+        // Atualiza UI
         userEmailSpan.textContent = user.email;
         loginScreen.classList.add('d-none');
         appContent.classList.remove('d-none');
         
+        // Forçar display via style caso classList falhe por algum motivo
+        loginScreen.style.display = 'none';
+        appContent.style.display = 'block';
+
         // Iniciar app
         inicializarApp();
     } else {
         // Usuário deslogado
         console.log("Usuário deslogado");
+        
+        // Atualiza UI
         loginScreen.classList.remove('d-none');
         appContent.classList.add('d-none');
+
+        // Forçar display
+        loginScreen.style.display = 'flex'; // login-container usa flex
+        appContent.style.display = 'none';
     }
 });
 
 // Login com Google
 btnLoginGoogle.addEventListener('click', () => {
-    // Tenta usar signInWithRedirect para melhor compatibilidade mobile
-    signInWithRedirect(auth, provider);
+    // Feedback visual simples
+    btnLoginGoogle.textContent = "Carregando...";
+    btnLoginGoogle.disabled = true;
+
+    // Em ambiente mobile/PWA, signInWithRedirect costuma ser mais confiável
+    // Vamos tentar forçar o redirect se estivermos em mobile (detecção simples)
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+        console.log("Mobile detectado, usando signInWithRedirect diretamente");
+        signInWithRedirect(auth, provider);
+    } else {
+        // Desktop: Tenta Popup primeiro
+        signInWithPopup(auth, provider)
+            .then((result) => {
+                console.log("Login via Popup sucesso:", result.user);
+            })
+            .catch((error) => {
+                console.error("Erro no Popup:", error);
+                // Se falhar, tenta redirect
+                console.log("Tentando fallback para Redirect...");
+                signInWithRedirect(auth, provider);
+            })
+            .finally(() => {
+                // Restaura botão em caso de erro no popup que não redirecionou
+                 setTimeout(() => {
+                    if (!auth.currentUser) {
+                        btnLoginGoogle.textContent = "Entrar com Google";
+                        btnLoginGoogle.disabled = false;
+                    }
+                 }, 3000);
+            });
+    }
 });
 
 // Verificar resultado do redirecionamento (caso tenha voltado do login)
@@ -60,6 +103,8 @@ getRedirectResult(auth)
     .catch((error) => {
         console.error("Erro no login via redirect:", error);
         alert("Erro ao fazer login: " + error.message);
+        btnLoginGoogle.textContent = "Entrar com Google";
+        btnLoginGoogle.disabled = false;
     });
 
 // Logout
