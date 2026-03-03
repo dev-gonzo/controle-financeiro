@@ -1,6 +1,6 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -45,15 +45,22 @@ onAuthStateChanged(auth, (user) => {
 
 // Login com Google
 btnLoginGoogle.addEventListener('click', () => {
-    signInWithPopup(auth, provider)
-        .then((result) => {
-            console.log("Login com sucesso");
-        })
-        .catch((error) => {
-            console.error("Erro no login:", error);
-            alert("Erro ao fazer login: " + error.message);
-        });
+    // Tenta usar signInWithRedirect para melhor compatibilidade mobile
+    signInWithRedirect(auth, provider);
 });
+
+// Verificar resultado do redirecionamento (caso tenha voltado do login)
+getRedirectResult(auth)
+    .then((result) => {
+        if (result) {
+            // O usuário acabou de logar via redirecionamento
+            console.log("Login via redirect sucesso", result.user);
+        }
+    })
+    .catch((error) => {
+        console.error("Erro no login via redirect:", error);
+        alert("Erro ao fazer login: " + error.message);
+    });
 
 // Logout
 btnLogout.addEventListener('click', () => {
