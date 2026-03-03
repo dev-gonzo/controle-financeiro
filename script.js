@@ -2,6 +2,28 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
+// Sistema de Log Visual para Mobile
+const debugConsole = document.getElementById('debug-console');
+function logDebug(msg, isError = false) {
+    console.log(msg);
+    if (debugConsole) {
+        debugConsole.style.display = 'block';
+        const line = document.createElement('div');
+        line.textContent = `> ${msg}`;
+        if (isError) line.style.color = 'red';
+        debugConsole.appendChild(line);
+        debugConsole.scrollTop = debugConsole.scrollHeight;
+    }
+}
+
+// Tratamento global de erros
+window.onerror = function(msg, url, lineNo, columnNo, error) {
+    logDebug(`Global Error: ${msg} (${lineNo}:${columnNo})`, true);
+    return false;
+};
+
+logDebug("Script iniciado...");
+
 // Your web app's Firebase configuration
 const firebaseConfig = {
     apiKey: "AIzaSyBb1Tp9duLgxojLxIIzrj_zOEDOQkv_-SI",
@@ -13,9 +35,15 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const provider = new GoogleAuthProvider();
+let app, auth, provider;
+try {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    provider = new GoogleAuthProvider();
+    logDebug("Firebase inicializado com sucesso.");
+} catch (e) {
+    logDebug("Erro fatal ao inicializar Firebase: " + e.message, true);
+}
 
 // Elementos da UI
 const loginScreen = document.getElementById('login-screen');
@@ -24,8 +52,39 @@ const btnLoginGoogle = document.getElementById('btnLoginGoogle');
 const btnLogout = document.getElementById('btnLogout');
 const userEmailSpan = document.getElementById('userEmail');
 
+// Função para exibir Toast de erro
+function showErrorToast(message) {
+    const toastEl = document.getElementById('errorToast');
+    const toastBody = document.getElementById('errorToastBody');
+    if (toastEl && toastBody) {
+        toastBody.textContent = message;
+        logDebug("Toast Erro: " + message, true);
+        // @ts-ignore
+        const toast = new bootstrap.Toast(toastEl);
+        toast.show();
+    } else {
+        logDebug("Toast Error (fallback alert): " + message, true);
+        alert(message);
+    }
+}
+
+// Função para exibir Toast de sucesso
+function showSuccessToast(message) {
+    const toastEl = document.getElementById('successToast');
+    const toastBody = document.getElementById('successToastBody');
+    if (toastEl && toastBody) {
+        toastBody.textContent = message;
+        logDebug("Toast Sucesso: " + message);
+        // @ts-ignore
+        const toast = new bootstrap.Toast(toastEl);
+        toast.show();
+    }
+}
+
 // Monitorar estado de autenticação
+logDebug("Registrando observer de Auth...");
 onAuthStateChanged(auth, (user) => {
+    logDebug("onAuthStateChanged disparado. User: " + (user ? user.email : "null"));
     if (user) {
         // Usuário logado
         console.log("Usuário logado:", user.email);
@@ -57,6 +116,8 @@ onAuthStateChanged(auth, (user) => {
 
 // Login com Google
 btnLoginGoogle.addEventListener('click', () => {
+    logDebug("Botão de login clicado.");
+    
     // Feedback visual simples
     btnLoginGoogle.textContent = "Carregando...";
     btnLoginGoogle.disabled = true;
@@ -64,21 +125,38 @@ btnLoginGoogle.addEventListener('click', () => {
     // Em ambiente mobile/PWA, signInWithRedirect costuma ser mais confiável
     // Vamos tentar forçar o redirect se estivermos em mobile (detecção simples)
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    logDebug("Ambiente Mobile? " + isMobile);
     
     if (isMobile) {
-        console.log("Mobile detectado, usando signInWithRedirect diretamente");
-        signInWithRedirect(auth, provider);
+        logDebug("Iniciando signInWithRedirect...");
+        signInWithRedirect(auth, provider)
+            .then(() => {
+                 logDebug("Redirect iniciado com sucesso (a página deve recarregar).");
+            })
+            .catch((error) => {
+                logDebug("Erro no Redirect: " + error.message, true);
+                showErrorToast("Erro ao iniciar login: " + error.message);
+                btnLoginGoogle.textContent = "Entrar com Google";
+                btnLoginGoogle.disabled = false;
+            });
     } else {
+        logDebug("Iniciando signInWithPopup...");
         // Desktop: Tenta Popup primeiro
         signInWithPopup(auth, provider)
             .then((result) => {
                 console.log("Login via Popup sucesso:", result.user);
+                showSuccessToast("Login realizado com sucesso!");
             })
             .catch((error) => {
                 console.error("Erro no Popup:", error);
-                // Se falhar, tenta redirect
-                console.log("Tentando fallback para Redirect...");
-                signInWithRedirect(auth, provider);
+                if (error.code === 'auth/popup-closed-by-user') {
+                    showErrorToast("Login cancelado (janela fechada).");
+                } else {
+                    showErrorToast(`Erro no Popup: ${error.message} (${error.code}). Tentando fallback...`);
+                    // Se falhar, tenta redirect
+                    console.log("Tentando fallback para Redirect...");
+                    signInWithRedirect(auth, provider);
+                }
             })
             .finally(() => {
                 // Restaura botão em caso de erro no popup que não redirecionou
@@ -93,16 +171,24 @@ btnLoginGoogle.addEventListener('click', () => {
 });
 
 // Verificar resultado do redirecionamento (caso tenha voltado do login)
+logDebug("Verificando getRedirectResult...");
 getRedirectResult(auth)
     .then((result) => {
+        logDebug("getRedirectResult finalizado. User: " + (result ? result.user.email : "Nenhum resultado de redirect"));
         if (result) {
             // O usuário acabou de logar via redirecionamento
-            console.log("Login via redirect sucesso", result.user);
+            showSuccessToast("Login via redirect sucesso!");
         }
     })
     .catch((error) => {
-        console.error("Erro no login via redirect:", error);
-        alert("Erro ao fazer login: " + error.message);
+        logDebug("Erro no getRedirectResult: " + error.message, true);
+        
+        let msg = "Erro ao processar login via redirecionamento.";
+        if (error.code) msg += ` Código: ${error.code}`;
+        if (error.message) msg += ` Detalhes: ${error.message}`;
+        
+        showErrorToast(msg);
+        
         btnLoginGoogle.textContent = "Entrar com Google";
         btnLoginGoogle.disabled = false;
     });
@@ -111,8 +197,10 @@ getRedirectResult(auth)
 btnLogout.addEventListener('click', () => {
     signOut(auth).then(() => {
         console.log("Logout realizado");
+        showSuccessToast("Logout realizado com sucesso!");
     }).catch((error) => {
         console.error("Erro no logout:", error);
+        showErrorToast("Erro ao sair: " + error.message);
     });
 });
 
