@@ -5,3 +5,9 @@
     justify-content: center;
     background-color: #f8f9fa;
 }
+
+.version-footer {
+    font-size: 0.7rem;
+    pointer-events: none;
+    z-index: 1060;
+}

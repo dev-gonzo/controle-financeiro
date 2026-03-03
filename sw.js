@@ -1,8 +1,9 @@
-const CACHE_NAME = 'financas-v0.0.1';
+const CACHE_NAME = 'financas-v0.0.2';
 const ASSETS = [
   './',
   './index.html',
   './script.js',
+  './style.css',
   './icon.svg',
   './manifest.json',
   'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css',
