@@ -1,4 +1,4 @@
-const CACHE_NAME = 'financas-v0.0.5';
+const CACHE_NAME = 'financas-v0.0.6';
 const ASSETS = [
   './',
   './index.html',
@@ -22,18 +22,26 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Ignora requisições POST ou para a API do Google Script (dados dinâmicos)
-  if (event.request.method !== 'GET' || event.request.url.includes('script.google.com')) {
-    return;
+  const url = new URL(event.request.url);
+
+  // ESTRATÉGIA: Bypass de Autenticação
+  // Ignora qualquer requisição para domínios de login ou scripts do Google
+  if (
+      url.hostname.includes('googleapis.com') ||
+      url.hostname.includes('google.com') ||
+      url.hostname.includes('firebaseapp.com') ||
+      url.pathname.includes('/__/auth/') ||
+      event.request.method !== 'GET'
+  ) {
+      return; // Deixa o navegador lidar com a rede diretamente
   }
 
   event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        return response || fetch(event.request).then((networkResponse) => {
-          // Opcional: Cachear novas requisições dinamicamente
-          return networkResponse;
-        });
+      caches.match(event.request).then((response) => {
+          return response || fetch(event.request).catch(() => {
+              // Fallback caso esteja offline e não tenha no cache
+              console.log("Falha ao buscar recurso offline: " + event.request.url);
+          });
       })
   );
 });

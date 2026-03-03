@@ -81,117 +81,77 @@ function showSuccessToast(message) {
     }
 }
 
-// Monitorar estado de autenticação
-logDebug("Registrando observer de Auth...");
-onAuthStateChanged(auth, (user) => {
-    logDebug("onAuthStateChanged disparado. User: " + (user ? user.email : "null"));
-    if (user) {
-        // Usuário logado
-        console.log("Usuário logado:", user.email);
+// Função para alternar telas de forma garantida
+function alternarTelas(usuarioLogado) {
+    if (usuarioLogado) {
+        logDebug("Sessão ativa: " + usuarioLogado.email);
+        userEmailSpan.textContent = usuarioLogado.email;
         
-        // Atualiza UI
-        userEmailSpan.textContent = user.email;
+        // Esconde login e mostra conteúdo
+        loginScreen.style.setProperty('display', 'none', 'important');
+        appContent.style.setProperty('display', 'block', 'important');
         loginScreen.classList.add('d-none');
         appContent.classList.remove('d-none');
-        
-        // Forçar display via style caso classList falhe por algum motivo
-        loginScreen.style.display = 'none';
-        appContent.style.display = 'block';
 
-        // Iniciar app
-        inicializarApp();
+        // Verifica se a função existe antes de chamar (segurança)
+        if (typeof inicializarApp === 'function') {
+            inicializarApp();
+        } else {
+            logDebug("Aviso: inicializarApp não definida", true);
+        }
     } else {
-        // Usuário deslogado
-        console.log("Usuário deslogado");
-        
-        // Atualiza UI
+        logDebug("Sessão encerrada ou inexistente.");
+        loginScreen.style.setProperty('display', 'flex', 'important');
+        appContent.style.setProperty('display', 'none', 'important');
         loginScreen.classList.remove('d-none');
         appContent.classList.add('d-none');
-
-        // Forçar display
-        loginScreen.style.display = 'flex'; // login-container usa flex
-        appContent.style.display = 'none';
     }
-});
+}
 
-// Login com Google
-btnLoginGoogle.addEventListener('click', () => {
-    logDebug("Botão de login clicado.");
-    
-    // Feedback visual simples
-    btnLoginGoogle.textContent = "Carregando...";
-    btnLoginGoogle.disabled = true;
-
-    // Em ambiente mobile/PWA, signInWithRedirect costuma ser mais confiável
-    // Vamos tentar forçar o redirect se estivermos em mobile (detecção simples)
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    logDebug("Ambiente Mobile? " + isMobile);
-    
-    if (isMobile) {
-        logDebug("Iniciando signInWithRedirect...");
-        signInWithRedirect(auth, provider)
-            .then(() => {
-                 logDebug("Redirect iniciado com sucesso (a página deve recarregar).");
-            })
-            .catch((error) => {
-                logDebug("Erro no Redirect: " + error.message, true);
-                showErrorToast("Erro ao iniciar login: " + error.message);
-                btnLoginGoogle.textContent = "Entrar com Google";
-                btnLoginGoogle.disabled = false;
-            });
-    } else {
-        logDebug("Iniciando signInWithPopup...");
-        // Desktop: Tenta Popup primeiro
-        signInWithPopup(auth, provider)
-            .then((result) => {
-                console.log("Login via Popup sucesso:", result.user);
-                showSuccessToast("Login realizado com sucesso!");
-            })
-            .catch((error) => {
-                console.error("Erro no Popup:", error);
-                if (error.code === 'auth/popup-closed-by-user') {
-                    showErrorToast("Login cancelado (janela fechada).");
-                } else {
-                    showErrorToast(`Erro no Popup: ${error.message} (${error.code}). Tentando fallback...`);
-                    // Se falhar, tenta redirect
-                    console.log("Tentando fallback para Redirect...");
-                    signInWithRedirect(auth, provider);
-                }
-            })
-            .finally(() => {
-                // Restaura botão em caso de erro no popup que não redirecionou
-                 setTimeout(() => {
-                    if (!auth.currentUser) {
-                        btnLoginGoogle.textContent = "Entrar com Google";
-                        btnLoginGoogle.disabled = false;
-                    }
-                 }, 3000);
-            });
-    }
-});
-
-// Verificar resultado do redirecionamento (caso tenha voltado do login)
-logDebug("Verificando getRedirectResult...");
+// PASSO 1: Capturar resultado do redirecionamento (Executado ao carregar a página)
+logDebug("Aguardando getRedirectResult...");
 getRedirectResult(auth)
     .then((result) => {
-        logDebug("getRedirectResult finalizado. User: " + (result ? result.user.email : "Nenhum resultado de redirect"));
         if (result) {
-            // O usuário acabou de logar via redirecionamento
-            showSuccessToast("Login via redirect sucesso!");
+            logDebug("Login via redirect capturado: " + result.user.email);
+            showSuccessToast("Login realizado com sucesso!");
+        } else {
+            logDebug("Sem pendências de redirecionamento.");
         }
     })
     .catch((error) => {
-        logDebug("Erro no getRedirectResult: " + error.message, true);
+        logDebug("Erro no retorno do Google: " + error.code, true);
         
-        let msg = "Erro ao processar login via redirecionamento.";
-        if (error.code) msg += ` Código: ${error.code}`;
-        if (error.message) msg += ` Detalhes: ${error.message}`;
+        let msg = "Falha na autenticação: " + error.message;
+        if (error.code) msg += ` (${error.code})`;
         
         showErrorToast(msg);
-        
+        // Reseta o botão para permitir nova tentativa
         btnLoginGoogle.textContent = "Entrar com Google";
         btnLoginGoogle.disabled = false;
     });
+
+// PASSO 2: Observador Reativo (Mantém o estado sincronizado)
+logDebug("Registrando observer de Auth...");
+onAuthStateChanged(auth, (user) => {
+    logDebug("Estado Auth alterado. User: " + (user ? user.email : "null"));
+    alternarTelas(user);
+});
+
+// PASSO 3: Trigger de Login
+btnLoginGoogle.addEventListener('click', () => {
+    logDebug("Iniciando fluxo de login...");
+    btnLoginGoogle.textContent = "Redirecionando...";
+    btnLoginGoogle.disabled = true;
+
+    // Em PWAs/Mobile, SEMPRE usar Redirect para evitar bloqueio de popups
+    signInWithRedirect(auth, provider).catch(error => {
+        logDebug("Erro ao iniciar Redirect: " + error.message, true);
+        showErrorToast("Erro ao iniciar login: " + error.message);
+        btnLoginGoogle.textContent = "Entrar com Google";
+        btnLoginGoogle.disabled = false;
+    });
+});
 
 // Logout
 btnLogout.addEventListener('click', () => {
