@@ -1,170 +1,20 @@
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { 
+    initFirebase, 
+    loginWithGoogle, 
+    logout, 
+    subscribeToAuthChanges, 
+    getCurrentUser 
+} from './auth.js';
 
-// Sistema de Log Visual para Mobile
-const debugConsole = document.getElementById('debug-console');
-function logDebug(msg, isError = false) {
-    console.log(msg);
-    if (debugConsole) {
-        debugConsole.style.display = 'block';
-        const line = document.createElement('div');
-        line.textContent = `> ${msg}`;
-        if (isError) line.style.color = 'red';
-        debugConsole.appendChild(line);
-        debugConsole.scrollTop = debugConsole.scrollHeight;
-    }
-}
+import { 
+    logDebug, 
+    showToast, 
+    toggleLoginState, 
+    setLoadingButton,
+    showLoadingOverlay
+} from './ui.js';
 
-// Tratamento global de erros
-window.onerror = function(msg, url, lineNo, columnNo, error) {
-    logDebug(`Global Error: ${msg} (${lineNo}:${columnNo})`, true);
-    return false;
-};
-
-logDebug("Script iniciado...");
-
-// Your web app's Firebase configuration
-const firebaseConfig = {
-    apiKey: "AIzaSyBb1Tp9duLgxojLxIIzrj_zOEDOQkv_-SI",
-    authDomain: "controle-financeiro-a9138.firebaseapp.com",
-    projectId: "controle-financeiro-a9138",
-    storageBucket: "controle-financeiro-a9138.firebasestorage.app",
-    messagingSenderId: "1000821412376",
-    appId: "1:1000821412376:web:800ac9f65916069325296d"
-};
-
-// Initialize Firebase
-let app, auth, provider;
-try {
-    app = initializeApp(firebaseConfig);
-    auth = getAuth(app);
-    provider = new GoogleAuthProvider();
-    logDebug("Firebase inicializado com sucesso.");
-} catch (e) {
-    logDebug("Erro fatal ao inicializar Firebase: " + e.message, true);
-}
-
-// Elementos da UI
-const loginScreen = document.getElementById('login-screen');
-const appContent = document.getElementById('app-content');
-const btnLoginGoogle = document.getElementById('btnLoginGoogle');
-const btnLogout = document.getElementById('btnLogout');
-const userEmailSpan = document.getElementById('userEmail');
-
-// Função para exibir Toast de erro
-function showErrorToast(message) {
-    const toastEl = document.getElementById('errorToast');
-    const toastBody = document.getElementById('errorToastBody');
-    if (toastEl && toastBody) {
-        toastBody.textContent = message;
-        logDebug("Toast Erro: " + message, true);
-        // @ts-ignore
-        const toast = new bootstrap.Toast(toastEl);
-        toast.show();
-    } else {
-        logDebug("Toast Error (fallback alert): " + message, true);
-        alert(message);
-    }
-}
-
-// Função para exibir Toast de sucesso
-function showSuccessToast(message) {
-    const toastEl = document.getElementById('successToast');
-    const toastBody = document.getElementById('successToastBody');
-    if (toastEl && toastBody) {
-        toastBody.textContent = message;
-        logDebug("Toast Sucesso: " + message);
-        // @ts-ignore
-        const toast = new bootstrap.Toast(toastEl);
-        toast.show();
-    }
-}
-
-// Função para alternar telas de forma garantida
-function alternarTelas(usuarioLogado) {
-    if (usuarioLogado) {
-        logDebug("Sessão ativa: " + usuarioLogado.email);
-        userEmailSpan.textContent = usuarioLogado.email;
-        
-        // Esconde login e mostra conteúdo
-        loginScreen.style.setProperty('display', 'none', 'important');
-        appContent.style.setProperty('display', 'block', 'important');
-        loginScreen.classList.add('d-none');
-        appContent.classList.remove('d-none');
-
-        // Verifica se a função existe antes de chamar (segurança)
-        if (typeof inicializarApp === 'function') {
-            inicializarApp();
-        } else {
-            logDebug("Aviso: inicializarApp não definida", true);
-        }
-    } else {
-        logDebug("Sessão encerrada ou inexistente.");
-        loginScreen.style.setProperty('display', 'flex', 'important');
-        appContent.style.setProperty('display', 'none', 'important');
-        loginScreen.classList.remove('d-none');
-        appContent.classList.add('d-none');
-    }
-}
-
-// PASSO 1: Capturar resultado do redirecionamento (Executado ao carregar a página)
-logDebug("Aguardando getRedirectResult...");
-getRedirectResult(auth)
-    .then((result) => {
-        if (result) {
-            logDebug("Login via redirect capturado: " + result.user.email);
-            showSuccessToast("Login realizado com sucesso!");
-        } else {
-            logDebug("Sem pendências de redirecionamento.");
-        }
-    })
-    .catch((error) => {
-        logDebug("Erro no retorno do Google: " + error.code, true);
-        
-        let msg = "Falha na autenticação: " + error.message;
-        if (error.code) msg += ` (${error.code})`;
-        
-        showErrorToast(msg);
-        // Reseta o botão para permitir nova tentativa
-        btnLoginGoogle.textContent = "Entrar com Google";
-        btnLoginGoogle.disabled = false;
-    });
-
-// PASSO 2: Observador Reativo (Mantém o estado sincronizado)
-logDebug("Registrando observer de Auth...");
-onAuthStateChanged(auth, (user) => {
-    logDebug("Estado Auth alterado. User: " + (user ? user.email : "null"));
-    alternarTelas(user);
-});
-
-// PASSO 3: Trigger de Login
-btnLoginGoogle.addEventListener('click', () => {
-    logDebug("Iniciando fluxo de login...");
-    btnLoginGoogle.textContent = "Redirecionando...";
-    btnLoginGoogle.disabled = true;
-
-    // Em PWAs/Mobile, SEMPRE usar Redirect para evitar bloqueio de popups
-    signInWithRedirect(auth, provider).catch(error => {
-        logDebug("Erro ao iniciar Redirect: " + error.message, true);
-        showErrorToast("Erro ao iniciar login: " + error.message);
-        btnLoginGoogle.textContent = "Entrar com Google";
-        btnLoginGoogle.disabled = false;
-    });
-});
-
-// Logout
-btnLogout.addEventListener('click', () => {
-    signOut(auth).then(() => {
-        console.log("Logout realizado");
-        showSuccessToast("Logout realizado com sucesso!");
-    }).catch((error) => {
-        console.error("Erro no logout:", error);
-        showErrorToast("Erro ao sair: " + error.message);
-    });
-});
-
-
+// --- Configuração e Estado Global ---
 const URL_API = 'https://script.google.com/macros/s/AKfycbz19NG0r6qMo3aoch8GmBsjZYlAlnAIEN2NzAi0UfjWWUBoqRolsgAH_w_iuCeRxj19/exec';
 
 let dadosGlobais = [];
@@ -173,10 +23,108 @@ let estadoFiltro = {
     ordemAsc: true
 };
 
+// --- Inicialização ---
+
+window.addEventListener('DOMContentLoaded', () => {
+    logDebug("DOM pronto. Iniciando Auth...");
+    
+    // Mostra loading inicial para evitar flash de conteúdo
+    showLoadingOverlay(true);
+
+    // Inicializa Firebase
+    initFirebase();
+
+    // 2. Escuta mudanças de estado (Login/Logout/Persistência)
+    subscribeToAuthChanges(
+        (user) => {
+            logDebug("Usuário autenticado: " + user.email);
+            toggleLoginState(true, user);
+            inicializarApp();
+            showLoadingOverlay(false);
+        },
+        () => {
+            logDebug("Usuário não autenticado.");
+            toggleLoginState(false);
+            showLoadingOverlay(false);
+        }
+    );
+
+    // Timeout de segurança para o Loading (caso o Firebase demore muito ou falhe silenciosamente)
+    setTimeout(() => {
+        const overlay = document.getElementById('loading-overlay');
+        if (overlay && overlay.style.display !== 'none') {
+            logDebug("Timeout de carregamento. Forçando liberação da UI.");
+            showLoadingOverlay(false);
+        }
+    }, 8000); // 8 segundos
+});
+
+// --- Event Listeners de Auth ---
+
+const btnLoginGoogle = document.getElementById('btnLoginGoogle');
+if (btnLoginGoogle) {
+    btnLoginGoogle.addEventListener('click', () => {
+        setLoadingButton('btnLoginGoogle', true);
+        // showLoadingOverlay(true); // Opcional com popup, mas bom para feedback visual
+        loginWithGoogle()
+            .then((user) => {
+                logDebug("Login popup sucesso: " + user.email);
+                showToast("Login realizado com sucesso!");
+                // O subscribeToAuthChanges vai lidar com a atualização da UI
+            })
+            .catch(err => {
+                setLoadingButton('btnLoginGoogle', false);
+                showLoadingOverlay(false);
+                showToast("Erro ao iniciar login: " + err.message, 'error');
+            });
+    });
+}
+
+const btnLogout = document.getElementById('btnLogout');
+if (btnLogout) {
+    btnLogout.addEventListener('click', () => {
+        if (confirm("Deseja realmente sair?")) {
+            showLoadingOverlay(true);
+            logout().then(() => {
+                showToast("Logout realizado com sucesso!");
+                // O onAuthStateChanged cuidará da UI e do loading
+            }).catch(err => {
+                showLoadingOverlay(false);
+                showToast("Erro ao sair: " + err.message, 'error');
+            });
+        }
+    });
+}
+
+// Botão de Reparo (Reset)
+const btnResetApp = document.getElementById('btnResetApp');
+if (btnResetApp) {
+    btnResetApp.addEventListener('click', async () => {
+        if (confirm("Isso limpará o cache do app e fará logout. Continuar?")) {
+            try {
+                showLoadingOverlay(true);
+                const cachesKeys = await caches.keys();
+                await Promise.all(cachesKeys.map(key => caches.delete(key)));
+                
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (let reg of registrations) await reg.unregister();
+                
+                window.location.reload(true);
+            } catch (e) {
+                console.error("Erro ao resetar:", e);
+                alert("Erro ao limpar dados: " + e.message);
+                showLoadingOverlay(false);
+            }
+        }
+    });
+}
+
+// --- Lógica da Aplicação ---
+
 function inicializarApp() {
     // Carrega o mês atual automaticamente se ainda não foi carregado
     const inputMes = document.getElementById('filtroMes');
-    if (!inputMes.value) {
+    if (inputMes && !inputMes.value) {
         const hoje = new Date();
         const mes = String(hoje.getMonth() + 1).padStart(2, '0');
         const ano = hoje.getFullYear();
@@ -187,106 +135,102 @@ function inicializarApp() {
     consultarFluxo();
 }
 
-// Expor funções para o escopo global (window) pois o módulo isola o escopo
-window.consultarFluxo = consultarFluxo;
-window.ordenarTabela = ordenarTabela;
-window.aplicarFiltros = aplicarFiltros;
-
-document.getElementById('formFluxo').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const btn = document.getElementById('btnEnviar');
-    btn.disabled = true;
-    btn.innerText = "Enviando...";
-
-    // Formatação da Data (aaaa-mm-dd -> dd/mm/aaaa)
-    const dataInput = document.getElementById('data').value;
-    let dataFormatada = dataInput;
-    if (dataInput) {
-        const [ano, mes, dia] = dataInput.split('-');
-        dataFormatada = `${dia}/${mes}/${ano}`;
-    }
-
-    // Formatação do Valor (trocar ponto por vírgula)
-    const valorInput = document.getElementById('valor').value;
-    const valorFormatado = valorInput.replace('.', ',');
-
-    // Adicionar info do usuário ao payload (opcional, se o backend suportar futuramente)
-    const user = auth.currentUser;
-    
-    const payload = {
-        data: dataFormatada,
-        categoria: document.getElementById('categoria').value,
-        descricao: document.getElementById('descricao').value,
-        tipo: document.getElementById('tipo').value,
-        valor: valorFormatado,
-        pagamento: document.getElementById('pagamento').value,
-        user_email: user ? user.email : 'anonymous'
-    };
-
-    fetch(URL_API, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    })
-    .then(() => {
-        // Fecha o modal de lançamento
-        // @ts-ignore
-        const modalLancamento = bootstrap.Modal.getInstance(document.getElementById('modalLancamento'));
-        if (modalLancamento) modalLancamento.hide();
-
-        // Abre o Modal de Sucesso
-        // @ts-ignore
-        const successModal = new bootstrap.Modal(document.getElementById('successModal'));
-        successModal.show();
-        
-        // Reseta o formulário
-        document.getElementById('formFluxo').reset();
-
-        // Recarrega a consulta para mostrar o novo lançamento
-        consultarFluxo();
-    })
-    .catch(err => alert('Erro ao enviar: ' + err))
-    .finally(() => {
-        btn.disabled = false;
-        btn.innerText = "Lançar no Fluxo";
-    });
-});
-
 async function consultarFluxo() {
     const mesRef = document.getElementById('filtroMes').value; // Formato "YYYY-MM"
-    if (!mesRef) return; // Não faz nada se não tiver mês selecionado
+    if (!mesRef) return; 
 
     const tbody = document.getElementById('tabelaCorpo');
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center">Carregando...</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center">Carregando...</td></tr>';
 
     try {
-        // Chama o doGet passando a acao e o mes
         const response = await fetch(`${URL_API}?acao=consultarFluxoPorMes&mes=${mesRef}`);
         const dados = await response.json();
 
         dadosGlobais = dados;
         
-        // Preenche o filtro de categorias
         preencherFiltroCategoria(dados);
-        
-        // Aplica filtros e renderiza
         aplicarFiltros();
     } catch (error) {
         console.error("Erro na consulta:", error);
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Erro ao carregar dados.</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Erro ao carregar dados.</td></tr>';
     }
 }
 
+// Form Submission
+const formFluxo = document.getElementById('formFluxo');
+if (formFluxo) {
+    formFluxo.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const btn = document.getElementById('btnEnviar');
+        
+        // UI Loading
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = "Enviando...";
+        }
+
+        // Formatação
+        const dataInput = document.getElementById('data').value;
+        let dataFormatada = dataInput;
+        if (dataInput) {
+            const [ano, mes, dia] = dataInput.split('-');
+            dataFormatada = `${dia}/${mes}/${ano}`;
+        }
+
+        const valorInput = document.getElementById('valor').value;
+        const valorFormatado = valorInput.replace('.', ',');
+
+        const user = getCurrentUser();
+        
+        const payload = {
+            data: dataFormatada,
+            categoria: document.getElementById('categoria').value,
+            descricao: document.getElementById('descricao').value,
+            tipo: document.getElementById('tipo').value,
+            valor: valorFormatado,
+            pagamento: document.getElementById('pagamento').value,
+            user_email: user ? user.email : 'anonymous'
+        };
+
+        fetch(URL_API, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(() => {
+            // @ts-ignore
+            const modalLancamento = bootstrap.Modal.getInstance(document.getElementById('modalLancamento'));
+            if (modalLancamento) modalLancamento.hide();
+
+            // @ts-ignore
+            const successModal = new bootstrap.Modal(document.getElementById('successModal'));
+            successModal.show();
+            
+            formFluxo.reset();
+            consultarFluxo();
+        })
+        .catch(err => {
+            alert('Erro ao enviar: ' + err);
+        })
+        .finally(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = "Lançar no Fluxo";
+            }
+        });
+    });
+}
+
+// --- Funções Auxiliares de Tabela (Mantidas do original) ---
+
 function preencherFiltroCategoria(dados) {
     const select = document.getElementById('filtroCategoria');
-    // Salva a seleção atual caso exista
+    if (!select) return;
+
     const valorAtual = select.value;
-    
-    // Obtém categorias únicas (coluna index 1)
     const categorias = [...new Set(dados.map(linha => linha[1]))].sort();
     
-    // Limpa e recria opções
     select.innerHTML = '<option value="">Todas</option>';
     categorias.forEach(cat => {
         const option = document.createElement('option');
@@ -295,7 +239,6 @@ function preencherFiltroCategoria(dados) {
         select.appendChild(option);
     });
 
-    // Restaura seleção se ainda existir na lista
     if (categorias.includes(valorAtual)) {
         select.value = valorAtual;
     }
@@ -316,21 +259,14 @@ function aplicarFiltros() {
             let valA = a[estadoFiltro.colunaOrdenacao];
             let valB = b[estadoFiltro.colunaOrdenacao];
             
-            // Trata ordenação de números (coluna 4 é valor)
             if (estadoFiltro.colunaOrdenacao === 4) {
-                // Remove R$ e converte vírgula para ponto se necessário, mas aqui os dados vêm da API (provavelmente numéricos ou strings formatadas)
-                // A API parece retornar arrays de valores. Se vier como string "1.000,00", precisa tratar.
-                // No código original, linha 196: parseFloat(linha[4]).
-                // Assumindo que linha[4] é string/number conversível.
                 valA = parseFloat(valA);
                 valB = parseFloat(valB);
             }
-            // Trata ordenação de datas (coluna 0)
             else if (estadoFiltro.colunaOrdenacao === 0) {
                 valA = new Date(valA);
                 valB = new Date(valB);
             }
-            // Strings
             else {
                 valA = valA.toString().toLowerCase();
                 valB = valB.toString().toLowerCase();
@@ -361,21 +297,24 @@ function renderizarTabela(dados) {
     const txtDes = document.getElementById('totalDespesas');
     const txtSal = document.getElementById('saldoFinal');
 
+    if (!tbody) return;
+
     let html = "";
     let rec = 0;
     let des = 0;
 
     if (dados.length === 0) {
         tbody.innerHTML = '<tr><td colspan="5" class="text-center">Nenhum lançamento encontrado.</td></tr>';
-        txtRec.innerText = "R$ 0,00";
-        txtDes.innerText = "R$ 0,00";
-        txtSal.innerText = "R$ 0,00";
-        txtSal.className = "text-end mb-0 mt-1 fw-bold";
+        if (txtRec) txtRec.innerText = "R$ 0,00";
+        if (txtDes) txtDes.innerText = "R$ 0,00";
+        if (txtSal) {
+            txtSal.innerText = "R$ 0,00";
+            txtSal.className = "text-end mb-0 mt-1 fw-bold";
+        }
         return;
     }
 
     dados.forEach(linha => {
-        // linha[0]=Data, linha[1]=Categoria, linha[2]=Descricao, linha[3]=Tipo, linha[4]=Valor
         const valor = parseFloat(linha[4]);
         const isReceita = linha[3] === "Receita";
         
@@ -393,10 +332,17 @@ function renderizarTabela(dados) {
     });
 
     tbody.innerHTML = html;
-    txtRec.innerText = `R$ ${rec.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-    txtDes.innerText = `R$ ${des.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+    if (txtRec) txtRec.innerText = `R$ ${rec.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+    if (txtDes) txtDes.innerText = `R$ ${des.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
     
     const saldo = rec - des;
-    txtSal.innerText = `R$ ${saldo.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
-    txtSal.className = `text-end mb-0 mt-1 fw-bold ${saldo >= 0 ? "text-primary" : "text-danger"}`;
+    if (txtSal) {
+        txtSal.innerText = `R$ ${saldo.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+        txtSal.className = `text-end mb-0 mt-1 fw-bold ${saldo >= 0 ? "text-primary" : "text-danger"}`;
+    }
 }
+
+// --- Expor para o Window (Necessário para onclick no HTML) ---
+window.consultarFluxo = consultarFluxo;
+window.ordenarTabela = ordenarTabela;
+window.aplicarFiltros = aplicarFiltros;

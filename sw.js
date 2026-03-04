@@ -1,8 +1,10 @@
-const CACHE_NAME = 'financas-v0.0.6';
+const CACHE_NAME = 'financas-v0.0.9'; // Incremente sempre que mudar
 const ASSETS = [
   './',
   './index.html',
   './script.js',
+  './auth.js',
+  './ui.js',
   './style.css',
   './icon.svg',
   './manifest.json',
@@ -22,28 +24,21 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
+    // REGRAS DE EXCLUSÃO (Essenciais para Firebase Auth)
+    if (
+        event.request.url.includes('google.com') ||
+        event.request.url.includes('googleapis.com') ||
+        event.request.url.includes('firebaseapp.com') ||
+        event.request.method !== 'GET'
+    ) {
+        return; // Deixa o navegador resolver, não o cache
+    }
 
-  // ESTRATÉGIA: Bypass de Autenticação
-  // Ignora qualquer requisição para domínios de login ou scripts do Google
-  if (
-      url.hostname.includes('googleapis.com') ||
-      url.hostname.includes('google.com') ||
-      url.hostname.includes('firebaseapp.com') ||
-      url.pathname.includes('/__/auth/') ||
-      event.request.method !== 'GET'
-  ) {
-      return; // Deixa o navegador lidar com a rede diretamente
-  }
-
-  event.respondWith(
-      caches.match(event.request).then((response) => {
-          return response || fetch(event.request).catch(() => {
-              // Fallback caso esteja offline e não tenha no cache
-              console.log("Falha ao buscar recurso offline: " + event.request.url);
-          });
-      })
-  );
+    event.respondWith(
+        caches.match(event.request).then((response) => {
+            return response || fetch(event.request);
+        })
+    );
 });
 
 self.addEventListener('activate', (event) => {
