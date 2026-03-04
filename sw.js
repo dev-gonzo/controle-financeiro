@@ -1,4 +1,4 @@
-const CACHE_NAME = 'financas-v1.0.2'; // Incremente sempre que mudar
+const CACHE_NAME = 'financas-v1.0.3'; // Incremente sempre que mudar
 const ASSETS = [
   './',
   './index.html',
