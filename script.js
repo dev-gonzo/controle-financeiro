@@ -111,6 +111,7 @@ function inicializarApp() {
     // Executa a consulta inicial
     consultarFluxo();
     carregarOpcoesPagamento();
+    carregarOpcoesCategorias();
 
     // Configura data padrão no modal de lançamento
     const modalLancamentoEl = document.getElementById('modalLancamento');
@@ -410,17 +411,21 @@ function renderizarTabela(dados) {
 function navegarPara(tela) {
     const fluxoView = document.getElementById('fluxo-view');
     const pagamentosView = document.getElementById('pagamentos-view');
+    const categoriasView = document.getElementById('categorias-view');
     const menuFluxo = document.getElementById('menuFluxo');
     const menuPagamentos = document.getElementById('menuPagamentos');
+    const menuCategorias = document.getElementById('menuCategorias');
     const offcanvasEl = document.getElementById('offcanvasMenu');
 
     // Esconde todas
     if (fluxoView) fluxoView.classList.add('d-none');
     if (pagamentosView) pagamentosView.classList.add('d-none');
+    if (categoriasView) categoriasView.classList.add('d-none');
     
     // Tira active dos menus
     if (menuFluxo) menuFluxo.classList.remove('active');
     if (menuPagamentos) menuPagamentos.classList.remove('active');
+    if (menuCategorias) menuCategorias.classList.remove('active');
 
     if (tela === 'fluxo') {
         if (fluxoView) fluxoView.classList.remove('d-none');
@@ -429,6 +434,10 @@ function navegarPara(tela) {
         if (pagamentosView) pagamentosView.classList.remove('d-none');
         if (menuPagamentos) menuPagamentos.classList.add('active');
         listarPagamentos();
+    } else if (tela === 'categorias') {
+        if (categoriasView) categoriasView.classList.remove('d-none');
+        if (menuCategorias) menuCategorias.classList.add('active');
+        listarCategorias();
     }
 
     // Fecha o menu lateral (mobile)
@@ -588,34 +597,205 @@ if (formCadastroPagamento) {
             status: document.getElementById('pag_status').value
         };
 
-        try {
-            await fetch(URL_API, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            showToast("Forma de pagamento cadastrada!");
-            this.reset();
-            
-            // Fecha o modal
+        fetch(URL_API, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(async () => {
             // @ts-ignore
             const modal = bootstrap.Modal.getInstance(document.getElementById('modalPagamento'));
             if (modal) modal.hide();
-
-            // Atualiza a lista
-            listarPagamentos();
-            carregarOpcoesPagamento();
             
-        } catch (error) {
-            showToast("Erro ao salvar: " + error, 'error');
-        } finally {
+            showToast("Pagamento salvo com sucesso!");
+            formCadastroPagamento.reset();
+            
+            // Força atualização do cache
+            try {
+                const novosDados = await buscarDadosPagamentos();
+                salvarPagamentosLocal(novosDados);
+                listarPagamentos();
+                carregarOpcoesPagamento(); // Atualiza o select do modal de lançamento também
+            } catch (e) {
+                console.error("Erro ao atualizar após cadastro:", e);
+            }
+        })
+        .catch(err => {
+            showToast("Erro ao salvar: " + err.message, 'error');
+        })
+        .finally(() => {
             if (btn) {
                 btn.disabled = false;
                 btn.innerText = "Salvar Forma de Pagamento";
             }
+        });
+    });
+}
+
+// --- Funcionalidades de Categorias ---
+
+const CACHE_CATEGORIAS_KEY = 'financas_categorias_v1';
+
+function salvarCategoriasLocal(dados) {
+    try {
+        localStorage.setItem(CACHE_CATEGORIAS_KEY, JSON.stringify(dados));
+    } catch (e) {
+        console.error("Erro ao salvar cache categorias:", e);
+    }
+}
+
+function lerCategoriasLocal() {
+    try {
+        const dados = localStorage.getItem(CACHE_CATEGORIAS_KEY);
+        return dados ? JSON.parse(dados) : null;
+    } catch (e) {
+        console.error("Erro ao ler cache categorias:", e);
+        return null;
+    }
+}
+
+async function buscarDadosCategorias() {
+    try {
+        const response = await fetch(`${URL_API}?acao=consultarCategoria`);
+        if (!response.ok) throw new Error("Erro na rede: " + response.status);
+        
+        const dados = await response.json();
+        // A API pode retornar um array de strings ou um objeto de erro
+        if (dados.error) throw new Error(dados.error);
+        
+        return dados; // Espera-se um array de strings
+    } catch (error) {
+        throw error;
+    }
+}
+
+async function carregarOpcoesCategorias() {
+    const select = document.getElementById('categoria');
+    if (!select) return;
+
+    const renderizar = (dados) => {
+        select.innerHTML = '<option value="" selected disabled>Selecione...</option>';
+        if (dados && Array.isArray(dados) && dados.length > 0) {
+            dados.sort().forEach(cat => {
+                const option = document.createElement('option');
+                option.value = cat;
+                option.textContent = cat;
+                select.appendChild(option);
+            });
         }
+    };
+
+    // 1. Cache
+    const dadosCache = lerCategoriasLocal();
+    if (dadosCache) {
+        renderizar(dadosCache);
+    } else {
+        select.innerHTML = '<option selected disabled>Carregando...</option>';
+    }
+
+    // 2. Rede
+    try {
+        const dados = await buscarDadosCategorias();
+        salvarCategoriasLocal(dados);
+        renderizar(dados);
+    } catch (error) {
+        console.error("Erro ao carregar categorias:", error);
+        if (!dadosCache) {
+            select.innerHTML = '<option selected disabled>Erro ao carregar</option>';
+        }
+    }
+}
+
+async function listarCategorias() {
+    const tbody = document.getElementById('tabelaCategoriasBody');
+    if (!tbody) return;
+
+    const renderizar = (dados) => {
+        let html = "";
+        if (dados && Array.isArray(dados) && dados.length > 0) {
+            dados.sort().forEach(cat => {
+                html += `
+                    <tr>
+                        <td>${cat}</td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html;
+        } else {
+            tbody.innerHTML = '<tr><td class="text-center text-muted">Nenhuma categoria cadastrada.</td></tr>';
+        }
+    };
+
+    // 1. Cache
+    const dadosCache = lerCategoriasLocal();
+    if (dadosCache) {
+        renderizar(dadosCache);
+    } else {
+        tbody.innerHTML = '<tr><td class="text-center">Carregando...</td></tr>';
+    }
+
+    // 2. Rede
+    try {
+        const dados = await buscarDadosCategorias();
+        salvarCategoriasLocal(dados);
+        renderizar(dados);
+    } catch (error) {
+        if (!dadosCache) {
+            tbody.innerHTML = `<tr><td class="text-center text-danger">Erro: ${error.message}</td></tr>`;
+        }
+    }
+}
+
+const formCadastroCategoria = document.getElementById('formCadastroCategoria');
+if (formCadastroCategoria) {
+    formCadastroCategoria.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const btn = e.target.querySelector('button[type="submit"]');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = "Salvando...";
+        }
+
+        const payload = {
+            acao: "cadastrarCategoria",
+            categoria: document.getElementById('cat_nome').value
+        };
+
+        fetch(URL_API, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(async () => {
+            // @ts-ignore
+            const modal = bootstrap.Modal.getInstance(document.getElementById('modalCategoria'));
+            if (modal) modal.hide();
+            
+            showToast("Categoria salva com sucesso!");
+            formCadastroCategoria.reset();
+            
+            // Atualiza cache e listas
+            try {
+                const novosDados = await buscarDadosCategorias();
+                salvarCategoriasLocal(novosDados);
+                listarCategorias();
+                carregarOpcoesCategorias();
+            } catch (e) {
+                console.error("Erro ao atualizar após cadastro:", e);
+            }
+        })
+        .catch(err => {
+            showToast("Erro ao salvar: " + err.message, 'error');
+        })
+        .finally(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = "Salvar Categoria";
+            }
+        });
     });
 }
 
