@@ -133,6 +133,7 @@ function inicializarApp() {
     
     // Executa a consulta inicial
     consultarFluxo();
+    carregarOpcoesPagamento();
 }
 
 async function consultarFluxo() {
@@ -144,7 +145,12 @@ async function consultarFluxo() {
 
     try {
         const response = await fetch(`${URL_API}?acao=consultarFluxoPorMes&mes=${mesRef}`);
+        
+        if (!response.ok) throw new Error("Erro na rede: " + response.status);
+        
         const dados = await response.json();
+
+        if (dados.error) throw new Error(dados.error);
 
         dadosGlobais = dados;
         
@@ -152,7 +158,7 @@ async function consultarFluxo() {
         aplicarFiltros();
     } catch (error) {
         console.error("Erro na consulta:", error);
-        if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Erro ao carregar dados.</td></tr>';
+        if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Erro ao carregar dados: ${error.message}</td></tr>`;
     }
 }
 
@@ -171,11 +177,8 @@ if (formFluxo) {
 
         // Formatação
         const dataInput = document.getElementById('data').value;
-        let dataFormatada = dataInput;
-        if (dataInput) {
-            const [ano, mes, dia] = dataInput.split('-');
-            dataFormatada = `${dia}/${mes}/${ano}`;
-        }
+        // Envia a data no formato YYYY-MM-DD (ISO) para facilitar filtros no Sheets
+        const dataFormatada = dataInput; 
 
         const valorInput = document.getElementById('valor').value;
         const valorFormatado = valorInput.replace('.', ',');
@@ -225,24 +228,63 @@ if (formFluxo) {
 // --- Funções Auxiliares de Tabela (Mantidas do original) ---
 
 function preencherFiltroCategoria(dados) {
-    const select = document.getElementById('filtroCategoria');
-    if (!select) return;
+    const selectDesktop = document.getElementById('filtroCategoria');
+    const selectMobile = document.getElementById('filtroCategoriaMobile');
+    
+    if (!selectDesktop) return;
 
-    const valorAtual = select.value;
+    const valorAtual = selectDesktop.value;
     const categorias = [...new Set(dados.map(linha => linha[1]))].sort();
     
-    select.innerHTML = '<option value="">Todas</option>';
+    // Popula Desktop
+    selectDesktop.innerHTML = '<option value="">Todas</option>';
     categorias.forEach(cat => {
         const option = document.createElement('option');
         option.value = cat;
         option.innerText = cat;
-        select.appendChild(option);
+        selectDesktop.appendChild(option);
     });
 
     if (categorias.includes(valorAtual)) {
-        select.value = valorAtual;
+        selectDesktop.value = valorAtual;
+    }
+
+    // Popula Mobile (se existir)
+    if (selectMobile) {
+        selectMobile.innerHTML = '<option value="">Todas</option>';
+        categorias.forEach(cat => {
+            const option = document.createElement('option');
+            option.value = cat;
+            option.innerText = cat;
+            selectMobile.appendChild(option);
+        });
+        selectMobile.value = selectDesktop.value;
     }
 }
+
+function sincronizarFiltros(origem, valor) {
+    // Sincroniza filtros entre Desktop e Mobile
+    const filtroCatDesktop = document.getElementById('filtroCategoria');
+    const filtroCatMobile = document.getElementById('filtroCategoriaMobile');
+    const filtroTipoDesktop = document.getElementById('filtroTipo');
+    const filtroTipoMobile = document.getElementById('filtroTipoMobile');
+
+    if (origem === 'categoria') {
+        if (filtroCatDesktop) filtroCatDesktop.value = valor;
+        if (filtroCatMobile) filtroCatMobile.value = valor;
+    } else if (origem === 'tipo') {
+        if (filtroTipoDesktop) filtroTipoDesktop.value = valor;
+        if (filtroTipoMobile) filtroTipoMobile.value = valor;
+    }
+
+    aplicarFiltros();
+}
+
+// Expor para o HTML
+window.sincronizarFiltros = sincronizarFiltros;
+window.ordenarTabela = ordenarTabela;
+window.aplicarFiltros = aplicarFiltros;
+window.consultarFluxo = consultarFluxo;
 
 function aplicarFiltros() {
     const catFiltro = document.getElementById('filtroCategoria').value;
@@ -293,18 +335,23 @@ function ordenarTabela(colunaIndex) {
 
 function renderizarTabela(dados) {
     const tbody = document.getElementById('tabelaCorpo');
+    const listaMobile = document.getElementById('lista-mobile'); // Container Mobile
     const txtRec = document.getElementById('totalReceitas');
     const txtDes = document.getElementById('totalDespesas');
     const txtSal = document.getElementById('saldoFinal');
 
     if (!tbody) return;
 
-    let html = "";
+    let htmlDesktop = "";
+    let htmlMobile = "";
     let rec = 0;
     let des = 0;
 
     if (dados.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center">Nenhum lançamento encontrado.</td></tr>';
+        const emptyMsg = 'Nenhum lançamento encontrado.';
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center">${emptyMsg}</td></tr>`;
+        if (listaMobile) listaMobile.innerHTML = `<div class="text-center text-muted py-4">${emptyMsg}</div>`;
+        
         if (txtRec) txtRec.innerText = "R$ 0,00";
         if (txtDes) txtDes.innerText = "R$ 0,00";
         if (txtSal) {
@@ -317,21 +364,45 @@ function renderizarTabela(dados) {
     dados.forEach(linha => {
         const valor = parseFloat(linha[4]);
         const isReceita = linha[3] === "Receita";
+        const valorFormatado = valor.toLocaleString('pt-BR', {minimumFractionDigits: 2});
+        const dataFormatada = new Date(linha[0]).toLocaleDateString('pt-BR');
         
         if (isReceita) rec += valor; else des += valor;
 
-        html += `
+        // Desktop Row
+        htmlDesktop += `
             <tr>
-                <td>${new Date(linha[0]).toLocaleDateString('pt-BR')}</td>
+                <td>${dataFormatada}</td>
                 <td>${linha[1]}</td>
                 <td>${linha[2]}</td>
                 <td><span class="badge ${isReceita ? 'bg-success' : 'bg-danger'}">${linha[3]}</span></td>
-                <td class="text-end">R$ ${valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                <td class="text-end">R$ ${valorFormatado}</td>
             </tr>
+        `;
+
+        // Mobile Card
+        htmlMobile += `
+            <div class="card mb-3 shadow-sm border-0">
+                <div class="card-body p-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="badge ${isReceita ? 'bg-success' : 'bg-danger'}">${linha[3]}</span>
+                        <span class="fw-bold ${isReceita ? 'text-success' : 'text-danger'}">R$ ${valorFormatado}</span>
+                    </div>
+                    <div class="mb-1">
+                        <strong class="text-dark">${linha[1]}</strong>
+                        <span class="text-muted small ms-1">• ${dataFormatada}</span>
+                    </div>
+                    <p class="card-text text-secondary mb-0 text-truncate" style="max-width: 100%;">
+                        ${linha[2]}
+                    </p>
+                </div>
+            </div>
         `;
     });
 
-    tbody.innerHTML = html;
+    tbody.innerHTML = htmlDesktop;
+    if (listaMobile) listaMobile.innerHTML = htmlMobile;
+
     if (txtRec) txtRec.innerText = `R$ ${rec.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
     if (txtDes) txtDes.innerText = `R$ ${des.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
     
@@ -340,6 +411,185 @@ function renderizarTabela(dados) {
         txtSal.innerText = `R$ ${saldo.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
         txtSal.className = `text-end mb-0 mt-1 fw-bold ${saldo >= 0 ? "text-primary" : "text-danger"}`;
     }
+}
+
+// --- Funções de Navegação ---
+function navegarPara(tela) {
+    const fluxoView = document.getElementById('fluxo-view');
+    const pagamentosView = document.getElementById('pagamentos-view');
+    const menuFluxo = document.getElementById('menuFluxo');
+    const menuPagamentos = document.getElementById('menuPagamentos');
+    const offcanvasEl = document.getElementById('offcanvasMenu');
+
+    // Esconde todas
+    if (fluxoView) fluxoView.classList.add('d-none');
+    if (pagamentosView) pagamentosView.classList.add('d-none');
+    
+    // Tira active dos menus
+    if (menuFluxo) menuFluxo.classList.remove('active');
+    if (menuPagamentos) menuPagamentos.classList.remove('active');
+
+    if (tela === 'fluxo') {
+        if (fluxoView) fluxoView.classList.remove('d-none');
+        if (menuFluxo) menuFluxo.classList.add('active');
+    } else if (tela === 'pagamentos') {
+        if (pagamentosView) pagamentosView.classList.remove('d-none');
+        if (menuPagamentos) menuPagamentos.classList.add('active');
+        listarPagamentos();
+    }
+
+    // Fecha o menu lateral (mobile)
+    // @ts-ignore
+    const offcanvas = bootstrap.Offcanvas.getInstance(offcanvasEl);
+    if (offcanvas) offcanvas.hide();
+}
+
+window.navegarPara = navegarPara;
+
+// --- Funcionalidades de Pagamento ---
+
+// Função genérica para buscar pagamentos da API
+async function buscarDadosPagamentos() {
+    try {
+        const response = await fetch(`${URL_API}?acao=listarPagamentos`);
+        if (!response.ok) throw new Error("Erro na rede: " + response.status);
+        
+        const dados = await response.json();
+        if (dados.error) throw new Error(dados.error);
+        
+        return dados;
+    } catch (error) {
+        throw error;
+    }
+}
+
+// Popula o select de formas de pagamento no modal de lançamento
+async function carregarOpcoesPagamento() {
+    const select = document.getElementById('pagamento');
+    if (!select) return;
+
+    try {
+        // Mostra loading no select
+        select.innerHTML = '<option selected disabled>Carregando...</option>';
+        
+        const dados = await buscarDadosPagamentos();
+        
+        select.innerHTML = '<option value="" selected disabled>Selecione...</option>';
+        
+        if (dados && dados.length > 0) {
+            dados.forEach(linha => {
+                // [Tipo, Banco, Descrição, Status]
+                const [tipo, banco, descricao, status] = linha;
+                
+                // Apenas mostra ativos (assumindo que "Ativo" é o status desejado)
+                if (status === 'Ativo') {
+                    const option = document.createElement('option');
+                    // Cria um valor legível e único. 
+                    // Se a descrição existir, usa ela, senão combina Tipo e Banco.
+                    const textoDisplay = descricao ? `${tipo} - ${banco} (${descricao})` : `${tipo} - ${banco}`;
+                    
+                    // O valor enviado será o texto de display para facilitar leitura na planilha de fluxo,
+                    // ou poderia ser um ID se tivéssemos. Como não temos ID, vamos usar o texto composto.
+                    // O usuário pediu "usar a forma de pagamento cadastradas".
+                    option.value = textoDisplay; 
+                    option.textContent = textoDisplay;
+                    select.appendChild(option);
+                }
+            });
+        }
+
+        if (select.options.length === 1) { // Só tem o placeholder
+             const option = document.createElement('option');
+             option.text = "Nenhuma forma ativa encontrada";
+             option.disabled = true;
+             select.appendChild(option);
+        }
+
+    } catch (error) {
+        console.error("Erro ao carregar opções de pagamento:", error);
+        select.innerHTML = '<option selected disabled>Erro ao carregar</option>';
+    }
+}
+
+async function listarPagamentos() {
+    const tbody = document.getElementById('tabelaPagamentosBody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center">Carregando...</td></tr>';
+
+    try {
+        const dados = await buscarDadosPagamentos();
+
+        let html = "";
+        if (dados && dados.length > 0) {
+            dados.forEach(linha => {
+                // [Tipo, Banco, Descrição, Status]
+                html += `
+                    <tr>
+                        <td>${linha[0] || '-'}</td>
+                        <td>${linha[1] || '-'}</td>
+                        <td>${linha[2] || '-'}</td>
+                        <td><span class="badge ${linha[3] === 'Ativo' ? 'bg-success' : 'bg-danger'}">${linha[3] || 'Inativo'}</span></td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html;
+        } else {
+             tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Nenhuma forma de pagamento cadastrada.</td></tr>';
+        }
+    } catch (error) {
+        logDebug("Erro Pagamentos: " + error.message);
+        tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
+    }
+}
+
+const formCadastroPagamento = document.getElementById('formCadastroPagamento');
+if (formCadastroPagamento) {
+    formCadastroPagamento.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const btn = e.target.querySelector('button[type="submit"]');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = "Salvando...";
+        }
+
+        const payload = {
+            acao: "cadastrarPagamento",
+            tipo: document.getElementById('pag_tipo').value,
+            banco: document.getElementById('pag_banco').value,
+            descricao: document.getElementById('pag_descricao').value,
+            status: document.getElementById('pag_status').value
+        };
+
+        try {
+            await fetch(URL_API, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            showToast("Forma de pagamento cadastrada!");
+            this.reset();
+            
+            // Fecha o modal
+            // @ts-ignore
+            const modal = bootstrap.Modal.getInstance(document.getElementById('modalPagamento'));
+            if (modal) modal.hide();
+
+            // Atualiza a lista
+            listarPagamentos();
+            
+        } catch (error) {
+            showToast("Erro ao salvar: " + error, 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = "Salvar Forma de Pagamento";
+            }
+        }
+    });
 }
 
 // --- Expor para o Window (Necessário para onclick no HTML) ---

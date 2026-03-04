@@ -25,7 +25,11 @@ export function showToast(message, type = 'success') {
     if (toastEl && toastBody) {
         toastBody.textContent = message;
         // @ts-ignore
-        const toast = new bootstrap.Toast(toastEl);
+        const toast = new bootstrap.Toast(toastEl, {
+            animation: true,
+            autohide: true,
+            delay: 4000 // Fecha automaticamente após 4 segundos
+        });
         toast.show();
     } else {
         alert(message);
