@@ -96,29 +96,6 @@ if (btnLogout) {
     });
 }
 
-// Botão de Reparo (Reset)
-const btnResetApp = document.getElementById('btnResetApp');
-if (btnResetApp) {
-    btnResetApp.addEventListener('click', async () => {
-        if (confirm("Isso limpará o cache do app e fará logout. Continuar?")) {
-            try {
-                showLoadingOverlay(true);
-                const cachesKeys = await caches.keys();
-                await Promise.all(cachesKeys.map(key => caches.delete(key)));
-                
-                const registrations = await navigator.serviceWorker.getRegistrations();
-                for (let reg of registrations) await reg.unregister();
-                
-                window.location.reload(true);
-            } catch (e) {
-                console.error("Erro ao resetar:", e);
-                alert("Erro ao limpar dados: " + e.message);
-                showLoadingOverlay(false);
-            }
-        }
-    });
-}
-
 // --- Lógica da Aplicação ---
 
 function inicializarApp() {
@@ -134,6 +111,21 @@ function inicializarApp() {
     // Executa a consulta inicial
     consultarFluxo();
     carregarOpcoesPagamento();
+
+    // Configura data padrão no modal de lançamento
+    const modalLancamentoEl = document.getElementById('modalLancamento');
+    if (modalLancamentoEl) {
+        modalLancamentoEl.addEventListener('show.bs.modal', () => {
+            const inputData = document.getElementById('data');
+            if (inputData) {
+                const hoje = new Date();
+                const ano = hoje.getFullYear();
+                const mes = String(hoje.getMonth() + 1).padStart(2, '0');
+                const dia = String(hoje.getDate()).padStart(2, '0');
+                inputData.value = `${ano}-${mes}-${dia}`;
+            }
+        });
+    }
 }
 
 async function consultarFluxo() {
@@ -448,6 +440,26 @@ window.navegarPara = navegarPara;
 
 // --- Funcionalidades de Pagamento ---
 
+const CACHE_PAGAMENTOS_KEY = 'financas_pagamentos_v1';
+
+function salvarPagamentosLocal(dados) {
+    try {
+        localStorage.setItem(CACHE_PAGAMENTOS_KEY, JSON.stringify(dados));
+    } catch (e) {
+        console.error("Erro ao salvar cache pagamentos:", e);
+    }
+}
+
+function lerPagamentosLocal() {
+    try {
+        const dados = localStorage.getItem(CACHE_PAGAMENTOS_KEY);
+        return dados ? JSON.parse(dados) : null;
+    } catch (e) {
+        console.error("Erro ao ler cache pagamentos:", e);
+        return null;
+    }
+}
+
 // Função genérica para buscar pagamentos da API
 async function buscarDadosPagamentos() {
     try {
@@ -468,46 +480,47 @@ async function carregarOpcoesPagamento() {
     const select = document.getElementById('pagamento');
     if (!select) return;
 
-    try {
-        // Mostra loading no select
-        select.innerHTML = '<option selected disabled>Carregando...</option>';
-        
-        const dados = await buscarDadosPagamentos();
-        
+    const renderizar = (dados) => {
         select.innerHTML = '<option value="" selected disabled>Selecione...</option>';
-        
         if (dados && dados.length > 0) {
             dados.forEach(linha => {
-                // [Tipo, Banco, Descrição, Status]
                 const [tipo, banco, descricao, status] = linha;
-                
-                // Apenas mostra ativos (assumindo que "Ativo" é o status desejado)
                 if (status === 'Ativo') {
                     const option = document.createElement('option');
-                    // Cria um valor legível e único. 
-                    // Se a descrição existir, usa ela, senão combina Tipo e Banco.
                     const textoDisplay = descricao ? `${tipo} - ${banco} (${descricao})` : `${tipo} - ${banco}`;
-                    
-                    // O valor enviado será o texto de display para facilitar leitura na planilha de fluxo,
-                    // ou poderia ser um ID se tivéssemos. Como não temos ID, vamos usar o texto composto.
-                    // O usuário pediu "usar a forma de pagamento cadastradas".
-                    option.value = textoDisplay; 
+                    option.value = textoDisplay;
                     option.textContent = textoDisplay;
                     select.appendChild(option);
                 }
             });
         }
-
-        if (select.options.length === 1) { // Só tem o placeholder
+        
+        if (select.options.length === 1) { 
              const option = document.createElement('option');
              option.text = "Nenhuma forma ativa encontrada";
              option.disabled = true;
              select.appendChild(option);
         }
+    };
 
+    // 1. Tenta carregar do cache
+    const dadosCache = lerPagamentosLocal();
+    if (dadosCache) {
+        renderizar(dadosCache);
+    } else {
+        select.innerHTML = '<option selected disabled>Carregando...</option>';
+    }
+
+    // 2. Busca da rede e atualiza
+    try {
+        const dados = await buscarDadosPagamentos();
+        salvarPagamentosLocal(dados);
+        renderizar(dados);
     } catch (error) {
         console.error("Erro ao carregar opções de pagamento:", error);
-        select.innerHTML = '<option selected disabled>Erro ao carregar</option>';
+        if (!dadosCache) {
+            select.innerHTML = '<option selected disabled>Erro ao carregar</option>';
+        }
     }
 }
 
@@ -515,15 +528,10 @@ async function listarPagamentos() {
     const tbody = document.getElementById('tabelaPagamentosBody');
     if (!tbody) return;
     
-    tbody.innerHTML = '<tr><td colspan="4" class="text-center">Carregando...</td></tr>';
-
-    try {
-        const dados = await buscarDadosPagamentos();
-
+    const renderizar = (dados) => {
         let html = "";
         if (dados && dados.length > 0) {
             dados.forEach(linha => {
-                // [Tipo, Banco, Descrição, Status]
                 html += `
                     <tr>
                         <td>${linha[0] || '-'}</td>
@@ -537,9 +545,26 @@ async function listarPagamentos() {
         } else {
              tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Nenhuma forma de pagamento cadastrada.</td></tr>';
         }
+    };
+
+    // 1. Cache
+    const dadosCache = lerPagamentosLocal();
+    if (dadosCache) {
+        renderizar(dadosCache);
+    } else {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center">Carregando...</td></tr>';
+    }
+
+    // 2. Rede
+    try {
+        const dados = await buscarDadosPagamentos();
+        salvarPagamentosLocal(dados);
+        renderizar(dados);
     } catch (error) {
         logDebug("Erro Pagamentos: " + error.message);
-        tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
+        if (!dadosCache) {
+            tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
+        }
     }
 }
 
@@ -580,6 +605,7 @@ if (formCadastroPagamento) {
 
             // Atualiza a lista
             listarPagamentos();
+            carregarOpcoesPagamento();
             
         } catch (error) {
             showToast("Erro ao salvar: " + error, 'error');
