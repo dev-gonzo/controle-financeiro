@@ -134,7 +134,17 @@ async function consultarFluxo() {
     if (!mesRef) return; 
 
     const tbody = document.getElementById('tabelaCorpo');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center">Carregando...</td></tr>';
+    const listaMobile = document.getElementById('lista-mobile');
+
+    const loadingHtml = `
+        <div class="d-flex justify-content-center align-items-center py-4 flex-column">
+            <div class="spinner-border text-primary mb-2" role="status"></div>
+            <span class="text-muted">Carregando lançamentos...</span>
+        </div>
+    `;
+
+    if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4">${loadingHtml}</td></tr>`;
+    if (listaMobile) listaMobile.innerHTML = loadingHtml;
 
     try {
         const response = await fetch(`${URL_API}?acao=consultarFluxoPorMes&mes=${mesRef}`);
