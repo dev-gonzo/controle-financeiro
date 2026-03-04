@@ -178,6 +178,7 @@ if (formFluxo) {
         const user = getCurrentUser();
         
         const payload = {
+            acao: "cadastrarFluxo",
             data: dataFormatada,
             categoria: document.getElementById('categoria').value,
             descricao: document.getElementById('descricao').value,
